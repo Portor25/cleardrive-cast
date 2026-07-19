@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <title>ClearDrive Music</title>
 <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<!-- DIAGNOSTIC - remove once playback works. Google's debug overlay prints receiver errors on
+     the TV itself, which is the only way to see why a load fails; the sender only ever gets
+     "DetailedCode=null". -->
+<script src="//www.gstatic.com/cast/sdk/libs/devtools/debug_layer/caf_receiver_logger.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; }
@@ -153,6 +157,38 @@ setInterval(() => {
     }
   }
 }, 300);
+
+// DIAGNOSTIC - remove once playback works.
+// Two independent reporters, because if one fails to initialise we still see something:
+//  1. Google's overlay, which prints the framework's own internal errors.
+//  2. Our own banner, which catches the load/error events directly.
+try {
+  const dbg = cast.debug.CastDebugLogger.getInstance();
+  dbg.setEnabled(true);
+  dbg.showDebugLogs(true);
+} catch (e) { /* overlay unavailable - the banner below still works */ }
+
+const errBox = document.createElement('div');
+errBox.style.cssText =
+  'position:absolute;left:0;right:0;bottom:0;z-index:99;background:rgba(180,0,0,0.92);' +
+  'color:#fff;font:1.1vw/1.5 monospace;padding:1vw;max-height:40vh;overflow:auto;white-space:pre-wrap;';
+document.body.appendChild(errBox);
+const say = (m) => { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
+
+say('receiver booted');
+
+playerManager.addEventListener(cast.framework.events.EventType.ERROR, (e) => {
+  say('ERROR ' + (e.detailedErrorCode || '?') + ' reason=' + (e.reason || '?') + ' ' + JSON.stringify(e.error || {}));
+});
+
+// What the sender actually asked us to play, and what we hand to the player.
+playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (req) => {
+  try {
+    const m = req.media || {};
+    say('LOAD contentId=' + m.contentId + '\n      contentType=' + m.contentType + ' streamType=' + m.streamType);
+  } catch (err) { say('LOAD intercept threw: ' + err); }
+  return req;
+});
 
 context.start();
 </script>
