@@ -8,14 +8,20 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; }
 
+  /* The framework's own player. It MUST exist in the DOM or nothing plays - playerManager has
+     no media element to play through, so every queue item errors instantly and the receiver
+     skips down the queue. Kept behind our own UI rather than display:none, so it stays laid
+     out and functional while never being seen. */
+  cast-media-player { position: absolute; inset: 0; z-index: 0; }
+
   #bg {
-    position: absolute; inset: 0;
+    position: absolute; inset: 0; z-index: 1;
     background-size: cover; background-position: center;
     filter: blur(60px) brightness(0.35);
     transform: scale(1.2);
   }
 
-  #root { position: absolute; inset: 0; display: flex; align-items: center; padding: 4vw; }
+  #root { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; padding: 4vw; }
 
   /* Left: artwork */
   #artwork-pane { flex: 0 0 30vw; display: flex; flex-direction: column; align-items: center; }
@@ -49,6 +55,7 @@
 </style>
 </head>
 <body>
+<cast-media-player></cast-media-player>
 <div id="bg"></div>
 <div id="root" class="no-lyrics">
   <div id="artwork-pane">
