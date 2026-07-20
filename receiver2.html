@@ -19,8 +19,8 @@
      creates its own stacking context and painted its default UI straight over our layout. This
      keeps it laid out and playing while showing nothing. */
   cast-media-player {
-    position: absolute; inset: 0; z-index: 0;
-    opacity: 0; pointer-events: none;
+    position: absolute !important; inset: 0 !important; z-index: 0 !important;
+    opacity: 0 !important; pointer-events: none !important;
   }
 
   #bg {
