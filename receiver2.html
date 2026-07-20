@@ -159,36 +159,48 @@ setInterval(() => {
 }, 300);
 
 // DIAGNOSTIC - remove once playback works.
-// Two independent reporters, because if one fails to initialise we still see something:
-//  1. Google's overlay, which prints the framework's own internal errors.
-//  2. Our own banner, which catches the load/error events directly.
+//
+// EVERY line is inside one try/catch, and context.start() lives after it. An earlier version put
+// these statements bare: one of them threw, which killed the whole script before start() ran, so
+// the receiver never initialised and the TV showed a black screen and dropped the connection.
+// Diagnostics must never be able to break the thing they are diagnosing.
+var say = function () {};
 try {
-  const dbg = cast.debug.CastDebugLogger.getInstance();
-  dbg.setEnabled(true);
-  dbg.showDebugLogs(true);
-} catch (e) { /* overlay unavailable - the banner below still works */ }
+  var errBox = document.createElement('div');
+  errBox.style.cssText =
+    'position:absolute;left:0;right:0;bottom:0;z-index:99;background:rgba(180,0,0,0.92);' +
+    'color:#fff;font:1.1vw/1.5 monospace;padding:1vw;max-height:40vh;overflow:auto;white-space:pre-wrap;';
+  document.body.appendChild(errBox);
+  say = function (m) { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
+  say('receiver booted');
 
-const errBox = document.createElement('div');
-errBox.style.cssText =
-  'position:absolute;left:0;right:0;bottom:0;z-index:99;background:rgba(180,0,0,0.92);' +
-  'color:#fff;font:1.1vw/1.5 monospace;padding:1vw;max-height:40vh;overflow:auto;white-space:pre-wrap;';
-document.body.appendChild(errBox);
-const say = (m) => { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
-
-say('receiver booted');
-
-playerManager.addEventListener(cast.framework.events.EventType.ERROR, (e) => {
-  say('ERROR ' + (e.detailedErrorCode || '?') + ' reason=' + (e.reason || '?') + ' ' + JSON.stringify(e.error || {}));
-});
-
-// What the sender actually asked us to play, and what we hand to the player.
-playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (req) => {
   try {
-    const m = req.media || {};
-    say('LOAD contentId=' + m.contentId + '\n      contentType=' + m.contentType + ' streamType=' + m.streamType);
-  } catch (err) { say('LOAD intercept threw: ' + err); }
-  return req;
-});
+    var dbg = cast.debug.CastDebugLogger.getInstance();
+    dbg.setEnabled(true);
+    dbg.showDebugLogs(true);
+    say('debug overlay on');
+  } catch (e) { say('debug overlay unavailable: ' + e); }
+
+  try {
+    playerManager.addEventListener(cast.framework.events.EventType.ERROR, function (e) {
+      say('ERROR code=' + (e && e.detailedErrorCode) + ' reason=' + (e && e.reason));
+    });
+    say('error listener on');
+  } catch (e) { say('error listener failed: ' + e); }
+
+  try {
+    playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, function (req) {
+      try {
+        var m = (req && req.media) || {};
+        say('LOAD id=' + m.contentId + ' type=' + m.contentType + ' stream=' + m.streamType);
+      } catch (err) { say('LOAD log threw: ' + err); }
+      return req;
+    });
+    say('load interceptor on');
+  } catch (e) { say('load interceptor failed: ' + e); }
+} catch (e) {
+  // Even the banner failed. Nothing to report with, but start() below must still run.
+}
 
 context.start();
 </script>
