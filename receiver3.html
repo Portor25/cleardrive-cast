@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ClearDrive Music</title>
+<script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<!-- DIAGNOSTIC - remove once this is proven. Prints receiver state on the TV itself. -->
+<script src="//www.gstatic.com/cast/sdk/libs/devtools/debug_layer/caf_receiver_logger.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000;
+               font-family: 'Roboto', sans-serif; color: #fff; }
+
+  /* THE media element. Replacing <cast-media-player> with a plain <video class="castMediaElement">
+     is Google's documented route to a fully custom UI: the framework plays through this element
+     but draws nothing, so the page below is finally ours. <cast-media-player> could not be used -
+     it paints its own full-screen UI over everything and beat both opacity:0 !important and being
+     parked at -10000px. This is audio, so the element itself never needs to be seen. */
+  video.castMediaElement {
+    position: fixed; left: -10000px; top: -10000px;
+    width: 1px; height: 1px; opacity: 0; pointer-events: none;
+  }
+
+  #bg {
+    position: absolute; inset: 0; z-index: 0;
+    background-size: cover; background-position: center;
+    filter: blur(50px) brightness(0.4);
+    transform: scale(1.15);
+  }
+
+  #root { position: absolute; inset: 0; z-index: 1; }
+
+  #artwork-pane { position: absolute; top: 6vh; right: 5vw; }
+  #artwork { width: 17vw; height: 17vw; object-fit: cover; box-shadow: 0 10px 40px rgba(0,0,0,0.7); }
+
+  #artist { position: absolute; left: 5vw; bottom: 18vh; font-size: 1.4vw; color: rgba(255,255,255,0.75); }
+  #title  { position: absolute; left: 5vw; bottom: 12vh; font-size: 2.6vw; font-weight: 700; }
+  #progress-wrap {
+    position: absolute; left: 5vw; right: 5vw; bottom: 8vh;
+    height: 4px; background: rgba(255,255,255,0.25); border-radius: 2px;
+  }
+  #progress { width: 0%; height: 100%; border-radius: 2px; background: #00E676; transition: width 0.4s linear; }
+
+  #lyrics-pane {
+    position: absolute; left: 4vw; right: 26vw; top: 18vh; height: 54vh; overflow: hidden;
+    mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
+    -webkit-mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
+  }
+  #lyrics { position: absolute; width: 100%; transition: transform 0.45s cubic-bezier(0.25, 0.8, 0.25, 1); }
+  .line {
+    font-size: 2.3vw; line-height: 1.9; font-weight: 500;
+    color: rgba(255,255,255,0.4); transition: color 0.3s, font-size 0.3s;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+  }
+  .line.current { font-size: 3vw; font-weight: 700; color: #00E676; }
+
+  /* No lyrics for this track: centre the cover instead of leaving a gap */
+  #root.no-lyrics #lyrics-pane { display: none; }
+  #root.no-lyrics #artwork-pane { top: 50%; right: 50%; transform: translate(50%, -50%); }
+  #root.no-lyrics #artwork { width: 30vw; height: 30vw; }
+</style>
+</head>
+<body>
+<video class="castMediaElement"></video>
+<div id="bg"></div>
+<div id="root" class="no-lyrics">
+  <div id="artwork-pane"><img id="artwork" src="" alt=""></div>
+  <div id="artist"></div>
+  <div id="title"></div>
+  <div id="progress-wrap"><div id="progress"></div></div>
+  <div id="lyrics-pane"><div id="lyrics"></div></div>
+</div>
+
+<script>
+const context = cast.framework.CastReceiverContext.getInstance();
+const playerManager = context.getPlayerManager();
+const NAMESPACE = 'urn:x-cast:com.cleardrive.lyrics';
+
+let lyricLines = [];   // [{t: ms, text: string}]
+let accent = '#00E676';
+let currentIndex = -1;
+
+var say = function () {};
+
+function renderLyrics() {
+  const root = document.getElementById('root');
+  const container = document.getElementById('lyrics');
+  container.innerHTML = '';
+  if (!lyricLines.length) {
+    root.classList.add('no-lyrics');
+    return;
+  }
+  root.classList.remove('no-lyrics');
+  lyricLines.forEach(function (line) {
+    const div = document.createElement('div');
+    div.className = 'line';
+    div.textContent = line.text || ' ';
+    container.appendChild(div);
+  });
+}
+
+// Paint whatever metadata we have. Called from both the data binder and MEDIA_STATUS, because
+// which one fires reliably without <cast-media-player> is exactly what this build is testing.
+function paintMetadata(meta) {
+  if (!meta) return;
+  const t = document.getElementById('title');
+  const a = document.getElementById('artist');
+  if (t) t.textContent = meta.title || '';
+  if (a) a.textContent = meta.artist || '';
+  const img = (meta.images && meta.images.length) ? meta.images[0].url : '';
+  if (img) {
+    const art = document.getElementById('artwork');
+    const bg = document.getElementById('bg');
+    if (art) art.src = img;
+    if (bg) bg.style.backgroundImage = 'url("' + img + '")';
+  }
+}
+
+// Phone sends lyrics for the current track. event.data can arrive as a STRING (the Android sender
+// calls sendMessage with a JSON string), so parse before reading .type - otherwise every message
+// is silently dropped.
+context.addCustomMessageListener(NAMESPACE, function (event) {
+  try {
+    var data = event && event.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (parseErr) {
+        say('lyrics not JSON: ' + String(data).slice(0, 60));
+        return;
+      }
+    }
+    data = data || {};
+    say('msg type=' + data.type + ' lines=' + ((data.lines || []).length));
+
+    if (data.type === 'lyrics') {
+      lyricLines = Array.isArray(data.lines) ? data.lines : [];
+      accent = data.accent || '#00E676';
+      currentIndex = -1;
+      renderLyrics();
+    } else if (data.type === 'clear') {
+      lyricLines = [];
+      renderLyrics();
+    }
+  } catch (e) {
+    say('lyrics handler threw: ' + e);
+  }
+});
+
+playerManager.addEventListener(cast.framework.events.EventType.MEDIA_STATUS, function () {
+  try {
+    const media = playerManager.getMediaInformation();
+    if (media && media.metadata) paintMetadata(media.metadata);
+  } catch (e) { /* binder below is the other route */ }
+});
+
+// Karaoke sync, driven by the TV's own playback clock so there is no phone-to-TV drift.
+setInterval(function () {
+  try {
+    const duration = playerManager.getDurationSec();
+    const t = playerManager.getCurrentTimeSec() * 1000;
+    const prog = document.getElementById('progress');
+    if (prog && duration > 0) {
+      prog.style.width = Math.min(100, (t / (duration * 1000)) * 100) + '%';
+    }
+    if (!lyricLines.length) return;
+
+    let index = -1;
+    for (let i = 0; i < lyricLines.length; i++) {
+      if ((lyricLines[i].t || 0) <= t) index = i; else break;
+    }
+    if (index !== currentIndex) {
+      currentIndex = index;
+      const lines = document.querySelectorAll('.line');
+      lines.forEach(function (el, i) {
+        el.classList.toggle('current', i === index);
+        el.style.color = (i === index) ? accent : '';
+      });
+      if (index >= 0 && lines[index]) {
+        const pane = document.getElementById('lyrics-pane');
+        const offset = lines[index].offsetTop - pane.clientHeight / 2 + lines[index].clientHeight / 2;
+        document.getElementById('lyrics').style.transform =
+          'translateY(' + (-Math.max(0, offset)) + 'px)';
+      }
+    }
+  } catch (e) { /* never let the loop die */ }
+}, 300);
+
+// DIAGNOSTIC - every line inside one try/catch, with context.start() after it. If a diagnostic
+// throws it must not stop the receiver starting; that mistake produced a black screen once.
+try {
+  var errBox = document.createElement('div');
+  errBox.style.cssText =
+    'position:absolute;left:0;right:0;bottom:0;z-index:99;background:rgba(180,0,0,0.92);' +
+    'color:#fff;font:1.1vw/1.5 monospace;padding:1vw;max-height:34vh;overflow:auto;white-space:pre-wrap;';
+  document.body.appendChild(errBox);
+  say = function (m) { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
+  say('receiver3 booted');
+
+  try {
+    var dbg = cast.debug.CastDebugLogger.getInstance();
+    dbg.setEnabled(true);
+    dbg.showDebugLogs(true);
+  } catch (e) { say('debug overlay unavailable'); }
+
+  // The data binder: what replaces <cast-media-player> for driving a custom UI.
+  try {
+    var playerData = {};
+    var binder = new cast.framework.ui.PlayerDataBinder(playerData);
+    binder.addEventListener(cast.framework.ui.PlayerDataEventType.STATE_CHANGED, function (e) {
+      say('state=' + e.value);
+    });
+    binder.addEventListener(cast.framework.ui.PlayerDataEventType.MEDIA_CHANGED, function () {
+      try {
+        if (playerData.media && playerData.media.metadata) paintMetadata(playerData.media.metadata);
+        say('media changed: ' + (playerData.media && playerData.media.metadata &&
+             playerData.media.metadata.title));
+      } catch (err) { say('media changed threw: ' + err); }
+    });
+    say('data binder on');
+  } catch (e) { say('data binder failed: ' + e); }
+
+  try {
+    playerManager.addEventListener(cast.framework.events.EventType.ERROR, function (e) {
+      say('ERROR code=' + (e && e.detailedErrorCode) + ' reason=' + (e && e.reason));
+    });
+  } catch (e) { say('error listener failed: ' + e); }
+} catch (e) {
+  // Even the banner failed. start() below must still run.
+}
+
+context.start();
+</script>
+</body>
+</html>
