@@ -14,9 +14,14 @@
 
   /* The framework's own player. It MUST exist in the DOM or nothing plays - playerManager has
      no media element to play through, so every queue item errors instantly and the receiver
-     skips down the queue. Kept behind our own UI rather than display:none, so it stays laid
-     out and functional while never being seen. */
-  cast-media-player { position: absolute; inset: 0; z-index: 0; }
+     skips down the queue (confirmed the hard way on 2026-07-20).
+     opacity:0 rather than display:none, and rather than relying on z-index alone: the element
+     creates its own stacking context and painted its default UI straight over our layout. This
+     keeps it laid out and playing while showing nothing. */
+  cast-media-player {
+    position: absolute; inset: 0; z-index: 0;
+    opacity: 0; pointer-events: none;
+  }
 
   #bg {
     position: absolute; inset: 0; z-index: 1;
