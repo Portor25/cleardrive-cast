@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ClearDrive Music</title>
+<script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<!-- DIAGNOSTIC - remove once playback works. Google's debug overlay prints receiver errors on
+     the TV itself, which is the only way to see why a load fails; the sender only ever gets
+     "DetailedCode=null". -->
+<script src="//www.gstatic.com/cast/sdk/libs/devtools/debug_layer/caf_receiver_logger.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; }
+
+  /* The framework's own player. It MUST exist in the DOM or nothing plays - playerManager has
+     no media element to play through, so every queue item errors instantly and the receiver
+     skips down the queue. Kept behind our own UI rather than display:none, so it stays laid
+     out and functional while never being seen. */
+  cast-media-player { position: absolute; inset: 0; z-index: 0; }
+
+  #bg {
+    position: absolute; inset: 0; z-index: 1;
+    background-size: cover; background-position: center;
+    filter: blur(60px) brightness(0.35);
+    transform: scale(1.2);
+  }
+
+  #root { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; padding: 4vw; }
+
+  /* Left: artwork */
+  #artwork-pane { flex: 0 0 30vw; display: flex; flex-direction: column; align-items: center; }
+  #artwork {
+    width: 26vw; height: 26vw; border-radius: 24px; object-fit: cover;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  #title { margin-top: 2vw; font-size: 2.2vw; font-weight: 700; text-align: center; max-width: 28vw;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #artist { margin-top: 0.5vw; font-size: 1.5vw; color: rgba(255,255,255,0.7); text-align: center; }
+  #progress-wrap { width: 26vw; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; margin-top: 1.5vw; }
+  #progress { width: 0%; height: 100%; border-radius: 3px; background: #00E676; transition: width 0.4s linear; }
+
+  /* Middle/right: lyrics */
+  #lyrics-pane {
+    flex: 1; height: 70vh; margin-left: 4vw; overflow: hidden; position: relative;
+    mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
+    -webkit-mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
+  }
+  #lyrics { position: absolute; width: 100%; transition: transform 0.45s cubic-bezier(0.25, 0.8, 0.25, 1); }
+  .line {
+    font-size: 2.4vw; line-height: 1.9; font-weight: 500;
+    color: rgba(255,255,255,0.35); transition: color 0.3s, font-size 0.3s;
+  }
+  .line.current { font-size: 3vw; font-weight: 700; color: #00E676; }
+
+  /* No-lyrics fallback: big centered artwork */
+  #root.no-lyrics #artwork-pane { flex: 1; }
+  #root.no-lyrics #artwork { width: 34vw; height: 34vw; }
+  #root.no-lyrics #lyrics-pane { display: none; }
+</style>
+</head>
+<body>
+<cast-media-player></cast-media-player>
+<div id="bg"></div>
+<div id="root" class="no-lyrics">
+  <div id="artwork-pane">
+    <img id="artwork" src="" alt="">
+    <div id="title"></div>
+    <div id="artist"></div>
+    <div id="progress-wrap"><div id="progress"></div></div>
+  </div>
+  <div id="lyrics-pane"><div id="lyrics"></div></div>
+</div>
+
+<script>
+const context = cast.framework.CastReceiverContext.getInstance();
+const playerManager = context.getPlayerManager();
+const NAMESPACE = 'urn:x-cast:com.cleardrive.lyrics';
+
+let lyricLines = [];   // [{t: ms, text: string}]
+let accent = '#00E676';
+let currentIndex = -1;
+
+// Phone sends lyrics (and theme colour) for the current track
+context.addCustomMessageListener(NAMESPACE, (event) => {
+  try {
+    const data = event.data || {};
+    if (data.type === 'lyrics') {
+      lyricLines = Array.isArray(data.lines) ? data.lines : [];
+      accent = data.accent || '#00E676';
+      currentIndex = -1;
+      renderLyrics();
+    } else if (data.type === 'clear') {
+      lyricLines = [];
+      renderLyrics();
+    }
+  } catch (e) { /* ignore malformed messages */ }
+});
+
+function renderLyrics() {
+  const root = document.getElementById('root');
+  const container = document.getElementById('lyrics');
+  container.innerHTML = '';
+  if (!lyricLines.length) {
+    root.classList.add('no-lyrics');
+    return;
+  }
+  root.classList.remove('no-lyrics');
+  lyricLines.forEach((line) => {
+    const div = document.createElement('div');
+    div.className = 'line';
+    div.textContent = line.text || ' ';
+    container.appendChild(div);
+  });
+  document.querySelectorAll('#progress').forEach(el => el.style.background = accent);
+}
+
+// Track metadata -> artwork, title, artist, blurred background
+playerManager.addEventListener(cast.framework.events.EventType.MEDIA_STATUS, () => {
+  const media = playerManager.getMediaInformation();
+  if (!media || !media.metadata) return;
+  const meta = media.metadata;
+  document.getElementById('title').textContent = meta.title || '';
+  document.getElementById('artist').textContent = meta.artist || '';
+  const img = (meta.images && meta.images.length) ? meta.images[0].url : '';
+  if (img) {
+    document.getElementById('artwork').src = img;
+    document.getElementById('bg').style.backgroundImage = 'url("' + img + '")';
+  }
+});
+
+// Karaoke sync loop: runs off the TV's own playback clock
+setInterval(() => {
+  const duration = playerManager.getDurationSec();
+  const t = playerManager.getCurrentTimeSec() * 1000;
+  if (duration > 0) {
+    document.getElementById('progress').style.width =
+      Math.min(100, (t / (duration * 1000)) * 100) + '%';
+  }
+  if (!lyricLines.length) return;
+
+  let index = -1;
+  for (let i = 0; i < lyricLines.length; i++) {
+    if ((lyricLines[i].t || 0) <= t) index = i; else break;
+  }
+  if (index !== currentIndex) {
+    currentIndex = index;
+    const lines = document.querySelectorAll('.line');
+    lines.forEach((el, i) => {
+      el.classList.toggle('current', i === index);
+      if (i === index) el.style.color = accent;
+      else el.style.color = '';
+    });
+    if (index >= 0 && lines[index]) {
+      const pane = document.getElementById('lyrics-pane');
+      const offset = lines[index].offsetTop - pane.clientHeight / 2 + lines[index].clientHeight / 2;
+      document.getElementById('lyrics').style.transform = 'translateY(' + (-Math.max(0, offset)) + 'px)';
+    }
+  }
+}, 300);
+
+// DIAGNOSTIC - remove once playback works.
+// Two independent reporters, because if one fails to initialise we still see something:
+//  1. Google's overlay, which prints the framework's own internal errors.
+//  2. Our own banner, which catches the load/error events directly.
+try {
+  const dbg = cast.debug.CastDebugLogger.getInstance();
+  dbg.setEnabled(true);
+  dbg.showDebugLogs(true);
+} catch (e) { /* overlay unavailable - the banner below still works */ }
+
+const errBox = document.createElement('div');
+errBox.style.cssText =
+  'position:absolute;left:0;right:0;bottom:0;z-index:99;background:rgba(180,0,0,0.92);' +
+  'color:#fff;font:1.1vw/1.5 monospace;padding:1vw;max-height:40vh;overflow:auto;white-space:pre-wrap;';
+document.body.appendChild(errBox);
+const say = (m) => { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
+
+say('receiver booted');
+
+playerManager.addEventListener(cast.framework.events.EventType.ERROR, (e) => {
+  say('ERROR ' + (e.detailedErrorCode || '?') + ' reason=' + (e.reason || '?') + ' ' + JSON.stringify(e.error || {}));
+});
+
+// What the sender actually asked us to play, and what we hand to the player.
+playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (req) => {
+  try {
+    const m = req.media || {};
+    say('LOAD contentId=' + m.contentId + '\n      contentType=' + m.contentType + ' streamType=' + m.streamType);
+  } catch (err) { say('LOAD intercept threw: ' + err); }
+  return req;
+});
+
+context.start();
+</script>
+</body>
+</html>
