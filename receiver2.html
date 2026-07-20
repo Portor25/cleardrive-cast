@@ -18,8 +18,14 @@
      opacity:0 rather than display:none, and rather than relying on z-index alone: the element
      creates its own stacking context and painted its default UI straight over our layout. This
      keeps it laid out and playing while showing nothing. */
+  /* Parked off-screen rather than hidden. opacity:0 (even !important) did not suppress the
+     framework's default UI - it renders through a shadow DOM the page cannot reach, and its own
+     styling wins. Moving the host element right out of the viewport is the one thing CSS can do
+     that the component cannot undo, and a 1px box off-screen still plays audio perfectly well. */
   cast-media-player {
-    position: absolute !important; inset: 0 !important; z-index: 0 !important;
+    position: fixed !important;
+    left: -10000px !important; top: -10000px !important;
+    width: 1px !important; height: 1px !important;
     opacity: 0 !important; pointer-events: none !important;
   }
 
