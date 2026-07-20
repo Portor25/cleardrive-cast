@@ -72,10 +72,22 @@ let lyricLines = [];   // [{t: ms, text: string}]
 let accent = '#00E676';
 let currentIndex = -1;
 
-// Phone sends lyrics (and theme colour) for the current track
+// Phone sends lyrics (and theme colour) for the current track.
+// The Android sender calls session.sendMessage(namespace, jsonString), so event.data can arrive
+// as a STRING rather than a parsed object. Reading .type off a string yields undefined and the
+// message was being silently dropped - hence lyrics that sent fine but never appeared.
 context.addCustomMessageListener(NAMESPACE, (event) => {
   try {
-    const data = event.data || {};
+    var data = event && event.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (parseErr) {
+        if (window.say) say('lyrics msg not JSON: ' + String(data).slice(0, 80));
+        return;
+      }
+    }
+    data = data || {};
+    if (window.say) say('msg type=' + data.type + ' lines=' + ((data.lines || []).length));
+
     if (data.type === 'lyrics') {
       lyricLines = Array.isArray(data.lines) ? data.lines : [];
       accent = data.accent || '#00E676';
@@ -85,7 +97,9 @@ context.addCustomMessageListener(NAMESPACE, (event) => {
       lyricLines = [];
       renderLyrics();
     }
-  } catch (e) { /* ignore malformed messages */ }
+  } catch (e) {
+    if (window.say) say('lyrics handler threw: ' + e);
+  }
 });
 
 function renderLyrics() {
