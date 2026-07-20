@@ -22,7 +22,7 @@
   }
 
   #bg {
-    position: absolute; inset: 0; z-index: 0;
+    position: absolute; inset: 0; z-index: -1;
     background-size: cover; background-position: center;
     filter: blur(50px) brightness(0.4);
     transform: scale(1.15);
@@ -184,24 +184,35 @@ setInterval(function () {
   } catch (e) { /* never let the loop die */ }
 }, 300);
 
-// DIAGNOSTIC - every line inside one try/catch, with context.start() after it. If a diagnostic
-// throws it must not stop the receiver starting; that mistake produced a black screen once.
+// Everything below is inside one try/catch, with context.start() after it. A diagnostic must never
+// be able to stop the receiver starting; an earlier version had bare statements, one threw, and the
+// TV showed a black screen and dropped the connection.
+//
+// DEBUG BANNER: set DEBUG = true to get an on-screen log of state changes, media changes and
+// incoming lyric messages. Invaluable when something is not working, and the only window into the
+// receiver - the sender only ever sees "DetailedCode=null". Left off for normal use.
+var DEBUG = false;
+
 try {
-  var errBox = document.createElement('div');
-  errBox.style.cssText =
-    'position:absolute;left:0;right:0;bottom:0;z-index:99;background:rgba(180,0,0,0.92);' +
-    'color:#fff;font:1.1vw/1.5 monospace;padding:1vw;max-height:34vh;overflow:auto;white-space:pre-wrap;';
-  document.body.appendChild(errBox);
-  say = function (m) { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
-  say('receiver3 booted');
+  if (DEBUG) {
+    var errBox = document.createElement('div');
+    errBox.style.cssText =
+      'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(180,0,0,0.95);' +
+      'color:#fff;font:1.2vw/1.5 monospace;padding:1vw;max-height:34vh;overflow:auto;white-space:pre-wrap;';
+    document.body.appendChild(errBox);
+    say = function (m) { errBox.textContent = (m + '\n' + errBox.textContent).slice(0, 4000); };
+    say('receiver3 booted');
 
-  try {
-    var dbg = cast.debug.CastDebugLogger.getInstance();
-    dbg.setEnabled(true);
-    dbg.showDebugLogs(true);
-  } catch (e) { say('debug overlay unavailable'); }
+    try {
+      var dbg = cast.debug.CastDebugLogger.getInstance();
+      dbg.setEnabled(true);
+      dbg.showDebugLogs(true);
+    } catch (e) { say('debug overlay unavailable'); }
+  }
 
-  // The data binder: what replaces <cast-media-player> for driving a custom UI.
+  // The data binder: what replaces <cast-media-player> for driving a custom UI. This is what makes
+  // the whole thing work - with <cast-media-player> the framework paints its own full-screen UI
+  // over everything, and no amount of CSS can stop it.
   try {
     var playerData = {};
     var binder = new cast.framework.ui.PlayerDataBinder(playerData);
