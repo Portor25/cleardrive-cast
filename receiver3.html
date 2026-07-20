@@ -31,7 +31,7 @@
   #root { position: absolute; inset: 0; z-index: 1; }
 
   #artwork-pane { position: absolute; top: 6vh; right: 5vw; }
-  #artwork { width: 17vw; height: 17vw; object-fit: cover; box-shadow: 0 10px 40px rgba(0,0,0,0.7); }
+  #artwork { width: 22vw; height: 22vw; object-fit: cover; box-shadow: 0 10px 40px rgba(0,0,0,0.7); }
 
   #artist { position: absolute; left: 5vw; bottom: 18vh; font-size: 1.4vw; color: rgba(255,255,255,0.75); }
   #title  { position: absolute; left: 5vw; bottom: 12vh; font-size: 2.6vw; font-weight: 700; }
@@ -79,6 +79,12 @@ const NAMESPACE = 'urn:x-cast:com.cleardrive.lyrics';
 let lyricLines = [];   // [{t: ms, text: string}]
 let accent = '#00E676';
 let currentIndex = -1;
+
+// How far AHEAD of the timestamp to highlight a line. LRC timestamps mark where a line begins, but
+// a highlight that lands exactly then feels a beat late - the eye needs a moment to reach the words
+// and the 300ms poll adds its own lag. Nudging ~700ms early makes it land on the beat and read
+// smoother. Raise if lines still feel late, lower if they jump ahead of the vocal.
+const LYRIC_LEAD_MS = 700;
 
 var say = function () {};
 
@@ -153,16 +159,20 @@ playerManager.addEventListener(cast.framework.events.EventType.MEDIA_STATUS, fun
 });
 
 // Karaoke sync, driven by the TV's own playback clock so there is no phone-to-TV drift.
+// Runs at 100ms (not 300ms) so the highlight lands closer to the beat and the scroll tracks
+// smoothly rather than in visible steps.
 setInterval(function () {
   try {
     const duration = playerManager.getDurationSec();
-    const t = playerManager.getCurrentTimeSec() * 1000;
+    const rawT = playerManager.getCurrentTimeSec() * 1000;
     const prog = document.getElementById('progress');
     if (prog && duration > 0) {
-      prog.style.width = Math.min(100, (t / (duration * 1000)) * 100) + '%';
+      prog.style.width = Math.min(100, (rawT / (duration * 1000)) * 100) + '%';
     }
     if (!lyricLines.length) return;
 
+    // Look slightly ahead so the line is lit as it starts, not after.
+    const t = rawT + LYRIC_LEAD_MS;
     let index = -1;
     for (let i = 0; i < lyricLines.length; i++) {
       if ((lyricLines[i].t || 0) <= t) index = i; else break;
@@ -182,7 +192,7 @@ setInterval(function () {
       }
     }
   } catch (e) { /* never let the loop die */ }
-}, 300);
+}, 100);
 
 // Everything below is inside one try/catch, with context.start() after it. A diagnostic must never
 // be able to stop the receiver starting; an earlier version had bare statements, one threw, and the
