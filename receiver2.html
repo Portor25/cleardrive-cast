@@ -12,61 +12,42 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; color: #fff; }
 
-  /* The framework's own player. It MUST exist in the DOM or nothing plays - playerManager has
-     no media element to play through, so every queue item errors instantly and the receiver
-     skips down the queue (confirmed the hard way on 2026-07-20).
-     opacity:0 rather than display:none, and rather than relying on z-index alone: the element
-     creates its own stacking context and painted its default UI straight over our layout. This
-     keeps it laid out and playing while showing nothing. */
-  /* Parked off-screen rather than hidden. opacity:0 (even !important) did not suppress the
-     framework's default UI - it renders through a shadow DOM the page cannot reach, and its own
-     styling wins. Moving the host element right out of the viewport is the one thing CSS can do
-     that the component cannot undo, and a 1px box off-screen still plays audio perfectly well. */
-  cast-media-player {
-    position: fixed !important;
-    left: -10000px !important; top: -10000px !important;
-    width: 1px !important; height: 1px !important;
-    opacity: 0 !important; pointer-events: none !important;
+  /* The framework's own player. It MUST exist in the DOM or nothing plays, and we now let it
+     draw its normal UI - blurred backdrop, cover thumbnail, title and progress bar. Trying to
+     hide it was a dead end: it renders through a shadow DOM the page cannot restyle. Its cover
+     thumbnail sits top-right and cannot be moved for the same reason.
+     Lyrics are simply drawn OVER the top instead. */
+  cast-media-player { position: absolute; inset: 0; z-index: 0; }
+
+  /* Lyrics overlay. Sits in the empty middle band, clear of the framework's thumbnail (top-right)
+     and its title/progress (bottom-left). pointer-events:none so it can never intercept anything
+     the player needs. */
+  #root {
+    position: absolute; left: 0; right: 0; top: 22vh; height: 56vh; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
   }
+  #root.no-lyrics { display: none; }
 
-  #bg {
-    position: absolute; inset: 0; z-index: 1;
-    background-size: cover; background-position: center;
-    filter: blur(60px) brightness(0.35);
-    transform: scale(1.2);
-  }
-
-  #root { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; padding: 4vw; }
-
-  /* Left: artwork */
-  #artwork-pane { flex: 0 0 30vw; display: flex; flex-direction: column; align-items: center; }
-  #artwork {
-    width: 26vw; height: 26vw; border-radius: 24px; object-fit: cover;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-  }
-  #title { margin-top: 2vw; font-size: 2.2vw; font-weight: 700; text-align: center; max-width: 28vw;
-           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #artist { margin-top: 0.5vw; font-size: 1.5vw; color: rgba(255,255,255,0.7); text-align: center; }
-  #progress-wrap { width: 26vw; height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; margin-top: 1.5vw; }
-  #progress { width: 0%; height: 100%; border-radius: 3px; background: #00E676; transition: width 0.4s linear; }
-
-  /* Middle/right: lyrics */
   #lyrics-pane {
-    flex: 1; height: 70vh; margin-left: 4vw; overflow: hidden; position: relative;
+    width: 62vw; height: 100%; overflow: hidden; position: relative;
+    padding: 0 3vw;
+    /* Scrim so words stay readable over any album art */
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 72%);
     mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
     -webkit-mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
   }
   #lyrics { position: absolute; width: 100%; transition: transform 0.45s cubic-bezier(0.25, 0.8, 0.25, 1); }
   .line {
-    font-size: 2.4vw; line-height: 1.9; font-weight: 500;
-    color: rgba(255,255,255,0.35); transition: color 0.3s, font-size 0.3s;
+    font-size: 2.4vw; line-height: 1.9; font-weight: 500; text-align: center;
+    color: rgba(255,255,255,0.45); transition: color 0.3s, font-size 0.3s;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.9);
   }
-  .line.current { font-size: 3vw; font-weight: 700; color: #00E676; }
+  .line.current { font-size: 3.1vw; font-weight: 700; color: #00E676; }
 
-  /* No-lyrics fallback: big centered artwork */
-  #root.no-lyrics #artwork-pane { flex: 1; }
-  #root.no-lyrics #artwork { width: 34vw; height: 34vw; }
-  #root.no-lyrics #lyrics-pane { display: none; }
+  /* Unused now the framework draws these - kept out of the way rather than deleted, so the
+     existing script can still reference them without null checks. */
+  #bg, #artwork-pane { display: none; }
 </style>
 </head>
 <body>
