@@ -2,6 +2,12 @@
 <html>
 <head>
 <meta charset="utf-8">
+<!-- Without this, some TV browsers (the Thomson's) lay the page out at a default width instead of
+     mapping 100vw/100vh to the physical panel, leaving an unfilled strip on two edges. The LG's
+     browser filled anyway, which is why the border showed on one TV and not the other. Google's
+     Default receiver and Deezer both ship this tag - that is why casting filled the screen before we
+     built our own receiver. Standard Cast-receiver line; safe on every device. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>ClearDrive Music</title>
 <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
 <!-- DIAGNOSTIC - remove once this is proven. Prints receiver state on the TV itself. -->
@@ -103,7 +109,15 @@
     transition: color 0.3s, transform 0.3s;
     text-shadow: 0 2px 12px rgba(0,0,0,0.85);
   }
-  .line.current { color: #00E676; transform: scale(1.08); }
+  /* Deezer does NOT grow the active line - it only brightens it. The scale() we had was the sole
+     cause of the highlighted line clipping: a full-width line fits fine when dim, then scale pushed
+     it past the pane's overflow:hidden edge (visible as "spent" -> "spe"). Emphasis is now colour +
+     a stronger glow only, so the green line is exactly as wide as it was when grey and can never be
+     cut off. Longer lines simply wrap (overflow-wrap on .line). */
+  .line.current {
+    color: #00E676;
+    text-shadow: 0 0 18px rgba(0,230,118,0.45), 0 2px 12px rgba(0,0,0,0.85);
+  }
 
   /* No lyrics for this track: centre the cover. */
   #root.no-lyrics #left { left: 50%; transform: translate(-50%, -50%); }
