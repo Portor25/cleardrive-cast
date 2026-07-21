@@ -42,10 +42,23 @@
     position: absolute; left: 5vw; top: 52%; transform: translateY(-50%);
     width: 36vw; display: flex; flex-direction: column; align-items: center;
   }
+  #art-wrap { position: relative; }
   #artwork {
     width: 34vw; height: 34vw; object-fit: cover; border-radius: 14px;
     box-shadow: 0 12px 48px rgba(0,0,0,0.7);
   }
+  /* Loading spinner over the cover. Masks the 1-3s it takes a skipped local file to buffer, the
+     same way Deezer covers its own load gap - the wait reads as intentional, not laggy. Shown only
+     while the player state is loading/buffering (see the STATE_CHANGED handler). */
+  #spinner {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 6vw; height: 6vw; display: none; z-index: 5;
+    border: 0.6vw solid rgba(255,255,255,0.25);
+    border-top-color: #00E676; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+  #root.loading #spinner { display: block; }
   #title {
     margin-top: 2.5vh; font-size: 2.3vw; font-weight: 700; text-align: center;
     max-width: 36vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -64,9 +77,11 @@
     mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
     -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
   }
-  /* Longer, gentler ease so the scroll glides rather than snapping. If it still looks steppy it is
-     the TV's browser GPU, not this - a weaker panel simply cannot animate large text as smoothly. */
-  #lyrics { position: absolute; width: 100%; transition: transform 0.55s cubic-bezier(0.33, 0, 0.15, 1); }
+  /* Short LINEAR transition: the script updates the scroll position every 100ms with a continuously
+     interpolated target, so a brief linear blend between ticks gives a smooth continuous glide. A
+     long ease here would fight those updates and make it lurch. If it still looks steppy it is the
+     TV's browser GPU, not this - a weaker panel cannot animate large text as smoothly as a phone. */
+  #lyrics { position: absolute; width: 100%; transition: transform 0.12s linear; }
   .line {
     font-size: 2.7vw; line-height: 1.9; font-weight: 500;
     color: rgba(255,255,255,0.4); transition: color 0.35s, font-size 0.35s;
@@ -86,7 +101,10 @@
 <div id="root" class="no-lyrics">
   <div id="appname">ClearDrive Music</div>
   <div id="left">
-    <img id="artwork" src="" alt="">
+    <div id="art-wrap">
+      <img id="artwork" src="" alt="">
+      <div id="spinner"></div>
+    </div>
     <div id="title"></div>
     <div id="artist"></div>
     <div id="progress-wrap"><div id="progress"></div></div>
@@ -200,19 +218,40 @@ setInterval(function () {
     for (let i = 0; i < lyricLines.length; i++) {
       if ((lyricLines[i].t || 0) <= t) index = i; else break;
     }
+    const lines = document.querySelectorAll('.line');
+    if (!lines.length) return;
+
+    // Highlight SNAPS to the active line the instant its time comes - that should feel on the beat.
     if (index !== currentIndex) {
       currentIndex = index;
-      const lines = document.querySelectorAll('.line');
       lines.forEach(function (el, i) {
         el.classList.toggle('current', i === index);
         el.style.color = (i === index) ? accent : '';
       });
-      if (index >= 0 && lines[index]) {
-        const pane = document.getElementById('lyrics-pane');
-        const offset = lines[index].offsetTop - pane.clientHeight / 2 + lines[index].clientHeight / 2;
-        document.getElementById('lyrics').style.transform =
-          'translateY(' + (-Math.max(0, offset)) + 'px)';
+    }
+
+    // Scroll GLIDES continuously (Deezer/Apple-Music style) instead of jumping once per line.
+    // Every tick we interpolate between the current line's centre and the next line's centre by how
+    // far through the gap we are in time, so the words drift smoothly rather than snapping.
+    if (index >= 0 && lines[index]) {
+      const pane = document.getElementById('lyrics-pane');
+      const cur = lines[index];
+      let centre = cur.offsetTop + cur.clientHeight / 2;
+
+      const next = lyricLines[index + 1];
+      if (next && lines[index + 1]) {
+        const nextEl = lines[index + 1];
+        const nextCentre = nextEl.offsetTop + nextEl.clientHeight / 2;
+        const span = (next.t || 0) - (lyricLines[index].t || 0);
+        if (span > 0) {
+          let frac = (t - (lyricLines[index].t || 0)) / span;
+          frac = frac < 0 ? 0 : (frac > 1 ? 1 : frac);
+          centre = centre + (nextCentre - centre) * frac;
+        }
       }
+      const offset = centre - pane.clientHeight / 2;
+      document.getElementById('lyrics').style.transform =
+        'translateY(' + (-Math.max(0, offset)) + 'px)';
     }
   } catch (e) { /* never let the loop die */ }
 }, 100);
@@ -250,10 +289,26 @@ try {
     var playerData = {};
     var binder = new cast.framework.ui.PlayerDataBinder(playerData);
     binder.addEventListener(cast.framework.ui.PlayerDataEventType.STATE_CHANGED, function (e) {
-      say('state=' + e.value);
+      // Show the spinner while the player is loading or buffering, hide it once it plays. Matched
+      // loosely on the string so it holds whatever exact casing/values the SDK reports.
+      try {
+        var s = ((e && e.value) || '').toString().toLowerCase();
+        var root = document.getElementById('root');
+        if (s.indexOf('load') >= 0 || s.indexOf('buffer') >= 0) root.classList.add('loading');
+        else root.classList.remove('loading');
+      } catch (err) {}
+      say('state=' + (e && e.value));
     });
     binder.addEventListener(cast.framework.ui.PlayerDataEventType.MEDIA_CHANGED, function () {
       try {
+        // Wipe the previous song's lyrics the instant the track changes, so nothing stale lingers
+        // while the new song loads. The phone re-sends the new lyrics (or a clear) right after, and
+        // that arrives over the network a beat later than this local event - so clearing first,
+        // filling second, is the right order and never wipes the incoming set.
+        lyricLines = [];
+        currentIndex = -1;
+        renderLyrics();
+
         if (playerData.media && playerData.media.metadata) paintMetadata(playerData.media.metadata);
         say('media changed: ' + (playerData.media && playerData.media.metadata &&
              playerData.media.metadata.title));
