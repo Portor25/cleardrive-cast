@@ -81,7 +81,7 @@
   /* Right column: scrolling lyrics. Starts just past the wider cover and runs to the edge, with a
      bigger font, so short lines fill the space instead of leaving a gap on the right. */
   #lyrics-pane {
-    position: absolute; left: 44vw; right: 3vw; top: 8vh; height: 84vh; overflow: hidden;
+    position: absolute; left: 45vw; right: 6vw; top: 8vh; height: 84vh; overflow: hidden;
     mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
     -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
   }
@@ -92,7 +92,8 @@
      100ms and that constant micro-motion is what looked jerky on the LG. */
   #lyrics { position: absolute; width: 100%; transition: transform 0.28s ease-out; }
   .line {
-    font-size: 2.9vw; line-height: 1.3; font-weight: 600; margin: 6vh 0;
+    font-size: 2.6vw; line-height: 1.3; font-weight: 600; margin: 6vh 0;
+    overflow-wrap: break-word;
     color: rgba(255,255,255,0.3);
     transform-origin: left center;
     /* Grow the active line with transform, NOT font-size. font-size reflows every line below it,
@@ -102,7 +103,7 @@
     transition: color 0.3s, transform 0.3s;
     text-shadow: 0 2px 12px rgba(0,0,0,0.85);
   }
-  .line.current { color: #00E676; transform: scale(1.12); }
+  .line.current { color: #00E676; transform: scale(1.08); }
 
   /* No lyrics for this track: centre the cover. */
   #root.no-lyrics #left { left: 50%; transform: translate(-50%, -50%); }
