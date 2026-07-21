@@ -301,14 +301,10 @@ try {
     });
     binder.addEventListener(cast.framework.ui.PlayerDataEventType.MEDIA_CHANGED, function () {
       try {
-        // Wipe the previous song's lyrics the instant the track changes, so nothing stale lingers
-        // while the new song loads. The phone re-sends the new lyrics (or a clear) right after, and
-        // that arrives over the network a beat later than this local event - so clearing first,
-        // filling second, is the right order and never wipes the incoming set.
-        lyricLines = [];
-        currentIndex = -1;
-        renderLyrics();
-
+        // Do NOT clear lyrics here. MEDIA_CHANGED can fire AFTER the phone's new lyrics message has
+        // already arrived and rendered, which wiped freshly-shown lyrics - the song's lyrics flashed
+        // on screen then vanished to the no-lyrics view a second later. The phone sends {lyrics} or
+        // {clear} for every track, so lyric state is driven entirely by those messages.
         if (playerData.media && playerData.media.metadata) paintMetadata(playerData.media.metadata);
         say('media changed: ' + (playerData.media && playerData.media.metadata &&
              playerData.media.metadata.title));
