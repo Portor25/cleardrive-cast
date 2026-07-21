@@ -8,8 +8,16 @@
 <script src="//www.gstatic.com/cast/sdk/libs/devtools/debug_layer/caf_receiver_logger.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000;
-               font-family: 'Roboto', sans-serif; color: #fff; }
+  html, body {
+    width: 100vw; height: 100vh; overflow: hidden; background: #000;
+    font-family: 'Roboto', sans-serif; color: #fff;
+  }
+  /* Solid black layer bled past every edge, so if the Thomson applies overscan there is still black
+     under the crop instead of a lighter TV-backdrop border. Deezer fills edge-to-edge on the same
+     TV; this matches that. The LG does not overscan, so it looks identical there. */
+  #edge-fill {
+    position: fixed; inset: -6vh -6vw; z-index: -2; background: #000;
+  }
 
   /* THE media element. Replacing <cast-media-player> with a plain <video class="castMediaElement">
      is Google's documented route to a fully custom UI: the framework plays through this element
@@ -73,9 +81,9 @@
   /* Right column: scrolling lyrics. Starts just past the wider cover and runs to the edge, with a
      bigger font, so short lines fill the space instead of leaving a gap on the right. */
   #lyrics-pane {
-    position: absolute; left: 44vw; right: 3vw; top: 10vh; height: 80vh; overflow: hidden;
-    mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
-    -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent);
+    position: absolute; left: 44vw; right: 3vw; top: 8vh; height: 84vh; overflow: hidden;
+    mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+    -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
   }
   /* Short LINEAR transition: the script updates the scroll position every 100ms with a continuously
      interpolated target, so a brief linear blend between ticks gives a smooth continuous glide. A
@@ -83,11 +91,17 @@
      TV's browser GPU, not this - a weaker panel cannot animate large text as smoothly as a phone. */
   #lyrics { position: absolute; width: 100%; transition: transform 0.12s linear; }
   .line {
-    font-size: 2.7vw; line-height: 1.9; font-weight: 500;
-    color: rgba(255,255,255,0.4); transition: color 0.35s, font-size 0.35s;
-    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    font-size: 2.7vw; line-height: 1.35; font-weight: 600; margin: 3.2vh 0;
+    color: rgba(255,255,255,0.32);
+    transform-origin: left center;
+    /* Grow the active line with transform, NOT font-size. font-size reflows every line below it,
+       which shoved the layout and made the scroll lurch ("weird jump"). transform is composited -
+       the line still visibly grows, but nothing reflows, so the scroll stays smooth. Deezer keeps
+       all lines one size and only brightens the active one; this is the same idea with a nudge. */
+    transition: color 0.3s, transform 0.3s;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.85);
   }
-  .line.current { font-size: 3.3vw; font-weight: 700; color: #00E676; }
+  .line.current { color: #00E676; transform: scale(1.12); }
 
   /* No lyrics for this track: centre the cover. */
   #root.no-lyrics #left { left: 50%; transform: translate(-50%, -50%); }
@@ -97,6 +111,7 @@
 </head>
 <body>
 <video class="castMediaElement"></video>
+<div id="edge-fill"></div>
 <div id="bg"></div>
 <div id="root" class="no-lyrics">
   <div id="appname">ClearDrive Music</div>
