@@ -91,8 +91,8 @@
      TV's browser GPU, not this - a weaker panel cannot animate large text as smoothly as a phone. */
   #lyrics { position: absolute; width: 100%; transition: transform 0.12s linear; }
   .line {
-    font-size: 2.7vw; line-height: 1.35; font-weight: 600; margin: 3.2vh 0;
-    color: rgba(255,255,255,0.32);
+    font-size: 2.9vw; line-height: 1.3; font-weight: 600; margin: 6vh 0;
+    color: rgba(255,255,255,0.3);
     transform-origin: left center;
     /* Grow the active line with transform, NOT font-size. font-size reflows every line below it,
        which shoved the layout and made the scroll lurch ("weird jump"). transform is composited -
@@ -245,28 +245,35 @@ setInterval(function () {
       });
     }
 
-    // Scroll GLIDES continuously (Deezer/Apple-Music style) instead of jumping once per line.
-    // Every tick we interpolate between the current line's centre and the next line's centre by how
-    // far through the gap we are in time, so the words drift smoothly rather than snapping.
-    if (index >= 0 && lines[index]) {
+    // Scroll GLIDES continuously (Deezer/Apple-Music style) instead of jumping once per line, and
+    // keeps the active line vertically CENTRED in the pane at all times - which is what gives the
+    // "3 lines at a time" look: one line centred, one fading above, one-two below.
+    //
+    // Before the first sung line (index < 0) we still centre line 0, so the opening lyric sits in
+    // the middle waiting rather than clustered at the top. The offset is NOT clamped to >= 0: the
+    // container is allowed to move down and reveal empty space above line 0, which is what actually
+    // centres it (the old Math.max(0,...) pinned the first lines to the top).
+    var scrollIdx = index < 0 ? 0 : index;
+    if (lines[scrollIdx]) {
       const pane = document.getElementById('lyrics-pane');
-      const cur = lines[index];
+      const cur = lines[scrollIdx];
       let centre = cur.offsetTop + cur.clientHeight / 2;
 
-      const next = lyricLines[index + 1];
-      if (next && lines[index + 1]) {
-        const nextEl = lines[index + 1];
-        const nextCentre = nextEl.offsetTop + nextEl.clientHeight / 2;
-        const span = (next.t || 0) - (lyricLines[index].t || 0);
-        if (span > 0) {
-          let frac = (t - (lyricLines[index].t || 0)) / span;
-          frac = frac < 0 ? 0 : (frac > 1 ? 1 : frac);
-          centre = centre + (nextCentre - centre) * frac;
+      if (index >= 0) {
+        const next = lyricLines[index + 1];
+        if (next && lines[index + 1]) {
+          const nextEl = lines[index + 1];
+          const nextCentre = nextEl.offsetTop + nextEl.clientHeight / 2;
+          const span = (next.t || 0) - (lyricLines[index].t || 0);
+          if (span > 0) {
+            let frac = (t - (lyricLines[index].t || 0)) / span;
+            frac = frac < 0 ? 0 : (frac > 1 ? 1 : frac);
+            centre = centre + (nextCentre - centre) * frac;
+          }
         }
       }
       const offset = centre - pane.clientHeight / 2;
-      document.getElementById('lyrics').style.transform =
-        'translateY(' + (-Math.max(0, offset)) + 'px)';
+      document.getElementById('lyrics').style.transform = 'translateY(' + (-offset) + 'px)';
     }
   } catch (e) { /* never let the loop die */ }
 }, 100);
